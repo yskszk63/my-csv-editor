@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta content="initial-scale=1, width=device-width" name="viewport" />
+    <title>My CSV editor</title>
+    <link rel="stylesheet" href="bundle.css"/>
+  </head>
+  <body>
+    <aside class="mdc-drawer mdc-drawer--modal">
+      <div class="mdc-drawer__content">
+        <div class="mdc-list">
+          <label class="mdc-list-item" for="open_input" tabindex="0">
+            <span class="mdc-list-item__ripple"></span>
+            <i class="material-icons mdc-list-item__graphic">folder_open</i>
+            <span class="mdc-list-item__text">open csv</span>
+          </label>
+          <div class="mdc-list-item" tabindex="1">
+            <span class="mdc-list-item__ripple"></span>
+            <div class="mdc-form-field">
+              <div class="mdc-touch-target-wrapper">
+                <div class="mdc-checkbox mdc-checkbox--touch">
+                  <input type="checkbox" class="mdc-checkbox__native-control" id=use_header" checked="checked"/>
+                  <div class="mdc-checkbox__background">
+                    <svg class="mdc-checkbox__checkmark" viewBox="0 0 24 24">
+                      <path class="mdc-checkbox__checkmark-path" fill="none" d="M1.73,12.91 8.1,19.28 22.79,4.59"/>
+                    </svg>
+                    <div class="mdc-checkbox__mixedmark"></div>
+                  </div>
+                  <div class="mdc-checkbox__ripple"></div>
+                </div>
+              </div>
+              <label class="mdc-list-item__text" for="use_header">use header</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <div class="mdc-drawer-scrim"></div>
+
+    <header class="mdc-top-app-bar mdc-elevation--z6">
+      <div class="mdc-top-app-bar__row">
+        <section class="mdc-top-app-bar__section mdc-top-app-bar__section--align-start">
+          <button class="material-icons mdc-top-app-bar__navigation-icon mdc-icon-button">menu</button>
+          <span class="mdc-top-app-bar__title">My CSV editor</span>
+        </section>
+        <section class="mdc-top-app-bar__section mdc-top-app-bar__section--align-end">
+          <label class="mdc-icon-button material-icons mdc-top-app-bar__action-item--unbounded" for="open_input">folder_open</label>
+          <input id="open_input" type="file" accept=".csv,text/csv" />
+        </section>
+      </div>
+    </header>
+
+    <div class="mdc-top-app-bar--fixed-adjust"></div>
+    <main>
+      <div id="grid"></div>
+    </main>
+
+    <script src="index.js"></script>
+  </body>
+</html>

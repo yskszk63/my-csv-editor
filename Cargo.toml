@@ -1,0 +1,45 @@
+[package]
+name = "my-csv-editor"
+description = "My CSV editor"
+version = "0.1.0"
+authors = ["yskszk63 <yskszk63@gmail.com>"]
+categories = ["wasm", "csv"]
+readme = "README.md"
+edition = "2018"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yskszk63/my-csv-editor"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+lto = true
+
+[dependencies]
+wasm-bindgen = "0.2"
+gloo = { version = "0.2", features = ["futures"] }
+wee_alloc = "0.4"
+console_error_panic_hook = "0.1"
+wasm-logger = "0.2"
+log = "0.4"
+csv = "1.1"
+js-sys = "0.3"
+wasm-bindgen-futures = "0.4"
+futures = "0.3"
+encoding = "0.2.33"
+chardet = "0.2.4"
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+    "Window",
+    "Document",
+    "Element",
+    "Node",
+    "DomTokenList",
+    "HtmlInputElement",
+    "FileList",
+]
+
+[dev-dependencies]
+wasm-bindgen-test = "0.2"
