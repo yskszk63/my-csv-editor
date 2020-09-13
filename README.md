@@ -1,5 +1,10 @@
 # My CSV editor
 
+CSV editor for my Rust and WASM study.
+(currently can not be save)
+
+[Demo](https://yskszk63.github.io/my-csv-editor/)
+
 ## License
 
 Licensed under either of
