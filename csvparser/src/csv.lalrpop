@@ -1,0 +1,64 @@
+use crate::{Csv, Row, Cell, lex::Token};
+
+grammar<'input>(input: &'input str);
+
+extern {
+    type Location = usize;
+    type Error = String;
+
+    enum Token<&'input str> {
+        COMMA => Token::COMMA,
+        CR => Token::CR,
+        DQUOTE => Token::DQUOTE,
+        LF => Token::LF,
+        CRLF => Token::CRLF,
+        TEXTDATA => Token::TEXTDATA(<&'input str>),
+        LF_BEFORE_EOF => Token::LF_BEFORE_EOF,
+        CRLF_BEFORE_EOF => Token::CRLF_BEFORE_EOF,
+    }
+}
+
+pub(crate) CsvWithHeader: Csv = {
+    <(Row eol)> <(<Row> <eol>)*> <Row> <eof?> => Csv::new_with_header(<>),
+}
+
+pub(crate) Csv: Csv = {
+    <(<Row> <eol>)*> <Row> <eof?> => Csv::new(<>),
+}
+
+eol: &'static str = {
+    CRLF => "\r\n",
+    LF => "\n",
+}
+
+eof: &'static str = {
+    CRLF_BEFORE_EOF => "\r\n",
+    LF_BEFORE_EOF => "\n",
+}
+
+Row: Row = {
+    <(<Cell> COMMA)*> <Cell> => Row::new(<>),
+}
+
+Cell: Cell = {
+    non_escaped => Cell::new(false, &<>),
+    DQUOTE <quoted> DQUOTE => Cell::new(true, &<>),
+}
+
+quoted: Vec<&'input str> = {
+    () => vec![],
+    <l:quoted> COMMA => { let mut l = l; l.push(","); l },
+    <l:quoted> CR => { let mut l = l; l.push("\r"); l },
+    <l:quoted> DQUOTE DQUOTE => { let mut l = l; l.push("\""); l },
+    <l:quoted> LF => { let mut l = l; l.push("\n"); l },
+    <l:quoted> CRLF => { let mut l = l; l.push("\r\n"); l },
+    <l:quoted> <r:TEXTDATA> => { let mut l = l; l.push(r); l },
+}
+
+non_escaped: Vec<&'input str> = {
+    () => vec![],
+    TEXTDATA => vec![<>],
+}
+
+// vim:set syntax=rust:
+
