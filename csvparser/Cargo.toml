@@ -1,0 +1,16 @@
+[package]
+name = "csvparser"
+version = "0.1.0"
+authors = ["yskszk63 <yskszk63@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+lalrpop-util = "0.19"
+regex = "1.3"
+thiserror = "1.0"
+
+[build-dependencies]
+lalrpop = { version = "0.19", features = ["lexer"] }
+
+[dev-dependencies]
+anyhow = "1.0"
