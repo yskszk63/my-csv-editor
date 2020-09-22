@@ -5,8 +5,8 @@ use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
-use web_sys::{Event, EventTarget, Element, HtmlInputElement, HtmlButtonElement, Url, Blob, BlobPropertyBag};
-use js_sys::{Object, Array};
+use web_sys::{Event, EventTarget, Element, HtmlInputElement, HtmlButtonElement, Url, File, FilePropertyBag};
+use js_sys::{Object, Array, Reflect};
 use gloo::events::EventListener;
 use futures::stream::{Stream, StreamExt};
 use futures::channel::mpsc::{self, Receiver};
@@ -17,23 +17,30 @@ use csvparser::Csv;
 
 mod cheetah_grid {
     use wasm_bindgen::prelude::*;
+    use wasm_bindgen::closure::Closure;
     use js_sys::Object;
 
     #[wasm_bindgen(module = "cheetah-grid")]
     extern "C" {
+        #[wasm_bindgen(js_namespace = ["ListGrid", "EVENT_TYPE"])]
+        pub(crate) static CHANGED_VALUE: String;
+
         pub(crate) type ListGrid;
 
         #[wasm_bindgen(js_name = "ListGrid", constructor, catch)]
         pub(crate) fn new(options: Option<&Object>) -> Result<ListGrid, JsValue>;
 
+        #[wasm_bindgen(method, catch)]
+        pub(crate) fn listen(this: &ListGrid, type_: &str, callback: &Closure<dyn FnMut(Object)>) -> Result<(), JsValue>;
+
         pub(crate) type InlineInputEditor;
 
-        #[wasm_bindgen(js_name = "ListGrid", constructor, catch, js_namespace = ["columns", "action"])]
+        #[wasm_bindgen(constructor, catch, js_namespace = ["columns", "action"])]
         pub(crate) fn new() -> Result<InlineInputEditor, JsValue>;
 
         pub(crate) type CachedDataSource;
 
-        #[wasm_bindgen(js_name = "ListGrid", constructor, catch, js_namespace = ["data"])]
+        #[wasm_bindgen(constructor, catch, js_namespace = ["data"])]
         pub(crate) fn new(opt: Object) -> Result<CachedDataSource, JsValue>;
     }
 }
@@ -160,16 +167,21 @@ impl<T> Stream for EventStream<T> {
 }
 
 struct Grid {
+    name: String,
+
     csv: Arc<Mutex<Csv>>,
 
     #[allow(dead_code)]
     grid: cheetah_grid::ListGrid,
 
     #[allow(dead_code)]
-    get_record: Closure<dyn FnMut(usize) -> Object>
+    get_record: Closure<dyn FnMut(usize) -> Object>,
+
+    #[allow(dead_code)]
+    on_changed: Closure<dyn FnMut(Object)>,
 }
 
-fn load(root: &Element, data: &str, use_header: bool) -> Result<Grid, JsValue> {
+fn load(root: &Element, name: String, data: &str, use_header: bool) -> Result<Grid, JsValue> {
     let document = root.owner_document().unwrap();
     let div = &document.create_element("div").unwrap();
     if let Some(old) = root.first_element_child() {
@@ -237,7 +249,31 @@ fn load(root: &Element, data: &str, use_header: bool) -> Result<Grid, JsValue> {
     };
     let grid = cheetah_grid::ListGrid::new(Some(&opt)).unwrap();
 
-    Ok(Grid { get_record, csv, grid, })
+    let on_changed = {
+        let csv = csv.clone();
+        Closure::wrap(Box::new(move |obj: Object| {
+            #[allow(unused_unsafe)]
+            let (row, col, value) = unsafe {
+                let row = Reflect::get(&obj, &"row".into()).ok();
+                let col = Reflect::get(&obj, &"col".into()).ok();
+                let value = Reflect::get(&obj, &"value".into()).ok();
+                (row, col, value)
+            };
+            let row = row.as_ref().and_then(JsValue::as_f64).map(|f| f as usize);
+            let col = col.as_ref().and_then(JsValue::as_f64).map(|f| f as usize);
+            let value = value.as_ref().and_then(JsValue::as_string);
+
+            if let (Some(row), Some(col), Some(val)) = (row, col, value) {
+                if row > 0 && col > 0 {
+                    let mut csv = csv.try_lock().unwrap();
+                    csv.set_val(row - 1, col - 1, val);
+                }
+            }
+        }) as Box<dyn FnMut(Object)>)
+    };
+    grid.listen(&cheetah_grid::CHANGED_VALUE, &on_changed).unwrap();
+
+    Ok(Grid { get_record, name, csv, grid, on_changed, })
 }
 
 #[derive(Debug, Clone)]
@@ -307,7 +343,7 @@ async fn async_main() -> Result<(), JsValue> {
                     } else {
                         String::from_utf8_lossy(&bytes).to_string()
                     };
-                    grid = Some(load(&root, &text, use_header.checked()).unwrap());
+                    grid = Some(load(&root, file.name(), &text, use_header.checked()).unwrap());
                     drawer.set_open(false);
                     app_save.set_disabled(false);
                 };
@@ -317,11 +353,13 @@ async fn async_main() -> Result<(), JsValue> {
                     let csv = grid.csv.lock().await;
                     let content = format!("{}", &*csv);
                     let parts = Array::of1(&JsValue::from(content));
-                    let blob = Blob::new_with_str_sequence_and_options(
+                    let blob = File::new_with_str_sequence_and_options(
                         &parts,
-                        BlobPropertyBag::new().type_("text/csv")).unwrap();
+                        &grid.name,
+                        FilePropertyBag::new().type_("text/csv")).unwrap();
                     let url = Url::create_object_url_with_blob(&blob).unwrap();
-                    window.open_with_url_and_target(&url, "_blank").ok();
+                    window.location().assign(&url).unwrap();
+                    Url::revoke_object_url(&url).unwrap();
                 }
             }
         }
