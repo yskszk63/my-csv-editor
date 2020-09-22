@@ -57,16 +57,15 @@ impl Csv {
         Ok(result)
     }
 
-    /*
-    pub fn add_row(&mut self) -> usize {
-        let row = Row {
-            cells: vec![],
-        };
-        self.rows.push((row, Some("\r\n")));
-        let len = self.rows.len();
-        len - 1
+    pub fn insert_row(&mut self, index: usize) {
+        let cells = (0..self.max_cols()).map(|_| Cell::new(false, &[][..])).into_iter().collect();
+        let row = Row { cells };
+        self.rows.insert(index, (row, Some("\r\n")));
     }
-    */
+
+    pub fn remove_row(&mut self, index: usize) {
+        self.rows.remove(index);
+    }
 
     pub fn header(&self, col: usize) -> Option<&str> {
         self.header.as_ref().and_then(|(h, _)| h.cells.get(col)).map(Cell::val)

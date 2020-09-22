@@ -5,8 +5,9 @@ use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
+use wasm_bindgen_futures::future_to_promise;
 use web_sys::{Event, EventTarget, Element, HtmlInputElement, HtmlButtonElement, Url, File, FilePropertyBag};
-use js_sys::{Object, Array, Reflect};
+use js_sys::{Object, Array, Promise, Reflect};
 use gloo::events::EventListener;
 use futures::stream::{Stream, StreamExt};
 use futures::channel::mpsc::{self, Receiver};
@@ -33,6 +34,15 @@ mod cheetah_grid {
         #[wasm_bindgen(method, catch)]
         pub(crate) fn listen(this: &ListGrid, type_: &str, callback: &Closure<dyn FnMut(Object)>) -> Result<(), JsValue>;
 
+        #[wasm_bindgen(method, catch)]
+        pub(crate) fn invalidate(this: &ListGrid) -> Result<(), JsValue>;
+
+        #[wasm_bindgen(method, getter, catch, js_name = "dataSource")]
+        pub(crate) fn data_source(this: &ListGrid) -> Result<CachedDataSource, JsValue>;
+
+        #[wasm_bindgen(method, getter, catch)]
+        pub(crate) fn selection(this: &ListGrid) -> Result<Object, JsValue>;
+
         pub(crate) type InlineInputEditor;
 
         #[wasm_bindgen(constructor, catch, js_namespace = ["columns", "action"])]
@@ -42,6 +52,16 @@ mod cheetah_grid {
 
         #[wasm_bindgen(constructor, catch, js_namespace = ["data"])]
         pub(crate) fn new(opt: Object) -> Result<CachedDataSource, JsValue>;
+
+        #[wasm_bindgen(method, catch, js_name = "clearCache")]
+        pub(crate) fn clear_cache(this: &CachedDataSource) -> Result<(), JsValue>;
+
+        #[wasm_bindgen(method, catch, getter)]
+        pub(crate) fn length(this: &CachedDataSource) -> Result<(), JsValue>;
+
+        #[wasm_bindgen(method, catch, setter)]
+        pub(crate) fn set_length(this: &CachedDataSource, val: usize) -> Result<(), JsValue>;
+
     }
 }
 
@@ -175,7 +195,7 @@ struct Grid {
     grid: cheetah_grid::ListGrid,
 
     #[allow(dead_code)]
-    get_record: Closure<dyn FnMut(usize) -> Object>,
+    get_record: Closure<dyn FnMut(usize) -> Promise>,
 
     #[allow(dead_code)]
     on_changed: Closure<dyn FnMut(Object)>,
@@ -215,18 +235,21 @@ fn load(root: &Element, name: String, data: &str, use_header: bool) -> Result<Gr
     let get_record = {
         let csv = csv.clone();
         Closure::wrap(Box::new(move |index| {
-            let csv = csv.try_lock().unwrap();
-            let row = js! {
-                "n" => format!("{}", index)
-            };
+            let csv = csv.clone();
+            future_to_promise(async move {
+                let csv = csv.lock().await;
+                let row = js! {
+                    "n" => format!("{}", index)
+                };
 
-            for (i, val) in csv.vals(index).enumerate() {
-                Object::assign(&row, &js! {
-                    format!("c{}", i) => val
-                });
-            }
-            row
-        }) as Box<dyn FnMut(usize) -> Object>)
+                for (i, val) in csv.vals(index).enumerate() {
+                    Object::assign(&row, &js! {
+                        format!("c{}", i) => val
+                    });
+                }
+                Ok(row.into())
+            })
+        }) as Box<dyn FnMut(usize) -> Promise>)
     };
 
     let data_source = cheetah_grid::CachedDataSource::new(js! {
@@ -280,6 +303,8 @@ fn load(root: &Element, name: String, data: &str, use_header: bool) -> Result<Gr
 enum EventType {
     FileChanged,
     Save,
+    Add,
+    Remove,
 }
 
 async fn async_main() -> Result<(), JsValue> {
@@ -310,12 +335,15 @@ async fn async_main() -> Result<(), JsValue> {
     #[allow(unused_assignments)]
     let mut grid = None;
     let input_file = document.query_selector("input[type=file]").unwrap().unwrap();
-    let app_save = document.query_selector(".app-save").unwrap().unwrap();
-    let app_save = app_save.dyn_ref::<HtmlButtonElement>().unwrap();
+    let app_save = document.query_selector(".app-save").unwrap().unwrap().dyn_into::<HtmlButtonElement>().unwrap();
+    let app_add = document.query_selector(".app-add").unwrap().unwrap().dyn_into::<HtmlButtonElement>().unwrap();
+    let app_remove = document.query_selector(".app-remove").unwrap().unwrap().dyn_into::<HtmlButtonElement>().unwrap();
 
     let mut events = EventStream::new(&[
         (input_file.as_ref(), FileChanged, "change"),
         (app_save.as_ref(), Save, "click"),
+        (app_add.as_ref(), Add, "click"),
+        (app_remove.as_ref(), Remove, "click"),
     ][..]);
 
     app_save.set_disabled(true);
@@ -344,8 +372,11 @@ async fn async_main() -> Result<(), JsValue> {
                         String::from_utf8_lossy(&bytes).to_string()
                     };
                     grid = Some(load(&root, file.name(), &text, use_header.checked()).unwrap());
+
                     drawer.set_open(false);
                     app_save.set_disabled(false);
+                    app_add.set_disabled(false);
+                    app_remove.set_disabled(false);
                 };
             }
             Save => {
@@ -360,6 +391,46 @@ async fn async_main() -> Result<(), JsValue> {
                     let url = Url::create_object_url_with_blob(&blob).unwrap();
                     window.location().assign(&url).unwrap();
                     Url::revoke_object_url(&url).unwrap();
+                }
+            }
+            Add => {
+                if let Some(grid) = &grid {
+                    let mut csv = grid.csv.lock().await;
+                    let grid = &grid.grid;
+
+                    let selection = grid.selection().unwrap();
+                    #[allow(unused_unsafe)]
+                    let row = unsafe {
+                        let select = Reflect::get(&selection, &"select".into()).unwrap();
+                        Reflect::get(&select, &"row".into()).unwrap()
+                    };
+                    let row = row.as_f64().map(|f| f as usize).unwrap();
+
+                    csv.insert_row(row - 1); // FIXME
+                    let data_source = grid.data_source().unwrap();
+                    data_source.set_length(csv.rows()).unwrap();
+                    data_source.clear_cache().unwrap();
+                    grid.invalidate().unwrap();
+                }
+            }
+            Remove => {
+                if let Some(grid) = &grid {
+                    let mut csv = grid.csv.lock().await;
+                    let grid = &grid.grid;
+
+                    let selection = grid.selection().unwrap();
+                    #[allow(unused_unsafe)]
+                    let row = unsafe {
+                        let select = Reflect::get(&selection, &"select".into()).unwrap();
+                        Reflect::get(&select, &"row".into()).unwrap()
+                    };
+                    let row = row.as_f64().map(|f| f as usize).unwrap();
+
+                    csv.remove_row(row - 1); // FIXME
+                    let data_source = grid.data_source().unwrap();
+                    data_source.set_length(csv.rows()).unwrap();
+                    data_source.clear_cache().unwrap();
+                    grid.invalidate().unwrap();
                 }
             }
         }
