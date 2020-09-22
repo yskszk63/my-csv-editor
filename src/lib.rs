@@ -5,7 +5,7 @@ use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
-use web_sys::{Event, EventTarget, Element, HtmlInputElement};
+use web_sys::{Event, EventTarget, Element, HtmlInputElement, HtmlButtonElement, Url, Blob, BlobPropertyBag};
 use js_sys::{Object, Array};
 use gloo::events::EventListener;
 use futures::stream::{Stream, StreamExt};
@@ -120,19 +120,21 @@ macro_rules! js {
     }
 }
 
-struct EventStream {
-    queue: Receiver<Event>,
+struct EventStream<T> {
+    queue: Receiver<(T, Event)>,
     _listeners: Vec<EventListener>,
 }
 
-impl EventStream {
-    fn new(target: &EventTarget, events: &[&'static str]) -> Self {
+impl<T> EventStream<T> where T: Clone + 'static {
+    //fn new(target: &EventTarget, events: &[&'static str]) -> Self {
+    fn new(desc: &[(&EventTarget, T, &'static str)]) -> Self {
         let (tx, rx) = mpsc::channel(32);
         let mut listeners = vec![];
-        for event in events {
+        for (target, token, event) in desc {
+            let token = token.clone();
             let mut tx = tx.clone();
             let listener = EventListener::new(target, *event, move |event| {
-                tx.start_send(event.clone()).unwrap();
+                tx.start_send((token.clone(), event.clone())).unwrap();
             });
             listeners.push(listener);
         }
@@ -143,22 +145,21 @@ impl EventStream {
     }
 }
 
-impl Stream for EventStream {
-    type Item = Event;
+impl<T> Stream for EventStream<T> {
+    type Item = (T, Event);
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let Self { ref mut queue, .. } = self.get_mut();
-        let event = Pin::new(queue).poll_next(cx);
-        match event {
+        let polled = Pin::new(queue).poll_next(cx);
+        match polled {
             Poll::Pending => Poll::Pending,
-            Poll::Ready(Some(event)) => Poll::Ready(Some(event)),
+            Poll::Ready(Some((token, event))) => Poll::Ready(Some((token, event))),
             Poll::Ready(None) => Poll::Ready(None),
         }
     }
 }
 
 struct Grid {
-    #[allow(dead_code)]
     csv: Arc<Mutex<Csv>>,
 
     #[allow(dead_code)]
@@ -239,7 +240,15 @@ fn load(root: &Element, data: &str, use_header: bool) -> Result<Grid, JsValue> {
     Ok(Grid { get_record, csv, grid, })
 }
 
+#[derive(Debug, Clone)]
+enum EventType {
+    FileChanged,
+    Save,
+}
+
 async fn async_main() -> Result<(), JsValue> {
+    use EventType::*;
+
     let window = web_sys::window().unwrap();
     let document = window.document().unwrap();
     let root = document.query_selector("main").unwrap().unwrap();
@@ -263,35 +272,59 @@ async fn async_main() -> Result<(), JsValue> {
     on_nav.forget();
 
     #[allow(unused_assignments)]
-    let mut _grid = None;
+    let mut grid = None;
     let input_file = document.query_selector("input[type=file]").unwrap().unwrap();
-    let mut events = EventStream::new(&input_file, &["change"]);
-    while let Some(event) = events.next().await {
-        let file_list = event.target()
-            .as_ref().and_then(JsCast::dyn_ref::<HtmlInputElement>)
-            .and_then(HtmlInputElement::files)
-            .map(gloo::file::FileList::from);
-        let file_list = if let Some(file_list) = file_list {
-            file_list
-        } else {
-            continue
-        };
+    let app_save = document.query_selector(".app-save").unwrap().unwrap();
+    let app_save = app_save.dyn_ref::<HtmlButtonElement>().unwrap();
 
-        if let Some(file) = file_list.iter().next() {
-            let bytes = gloo::file::futures::read_as_bytes(file).await.unwrap();
+    let mut events = EventStream::new(&[
+        (input_file.as_ref(), FileChanged, "change"),
+        (app_save.as_ref(), Save, "click"),
+    ][..]);
 
-            let (encoding, _, _) = chardet::detect(&bytes);
-            let coder = encoding::label::encoding_from_whatwg_label(chardet::charset2encoding(&encoding));
-            let bytes = if let Some(coder) = coder {
-                //coder.decode(&bytes, encoding::DecoderTrap::Ignore).map(String::into_bytes).unwrap_or(bytes)
-                coder.decode(&bytes, encoding::DecoderTrap::Ignore).unwrap_or(String::from_utf8_lossy(&bytes).to_string())
-            } else {
-                //bytes
-                String::from_utf8_lossy(&bytes).to_string()
-            };
-            _grid = Some(load(&root, &bytes, use_header.checked()).unwrap());
-            drawer.set_open(false);
-        };
+    app_save.set_disabled(true);
+    while let Some((token, event)) = events.next().await {
+        match token {
+            FileChanged => {
+                let file_list = event.target()
+                    .as_ref().and_then(JsCast::dyn_ref::<HtmlInputElement>)
+                    .and_then(HtmlInputElement::files)
+                    .map(gloo::file::FileList::from);
+                let file_list = if let Some(file_list) = file_list {
+                    file_list
+                } else {
+                    continue
+                };
+
+                if let Some(file) = file_list.iter().next() {
+                    let bytes = gloo::file::futures::read_as_bytes(file).await.unwrap();
+
+                    let (encoding, _, _) = chardet::detect(&bytes);
+                    let coder = encoding::label::encoding_from_whatwg_label(chardet::charset2encoding(&encoding));
+                    let text = if let Some(coder) = coder {
+                        coder.decode(&bytes, encoding::DecoderTrap::Ignore)
+                            .unwrap_or(String::from_utf8_lossy(&bytes).to_string())
+                    } else {
+                        String::from_utf8_lossy(&bytes).to_string()
+                    };
+                    grid = Some(load(&root, &text, use_header.checked()).unwrap());
+                    drawer.set_open(false);
+                    app_save.set_disabled(false);
+                };
+            }
+            Save => {
+                if let Some(grid) = &grid {
+                    let csv = grid.csv.lock().await;
+                    let content = format!("{}", &*csv);
+                    let parts = Array::of1(&JsValue::from(content));
+                    let blob = Blob::new_with_str_sequence_and_options(
+                        &parts,
+                        BlobPropertyBag::new().type_("text/csv")).unwrap();
+                    let url = Url::create_object_url_with_blob(&blob).unwrap();
+                    window.open_with_url_and_target(&url, "_blank").ok();
+                }
+            }
+        }
     };
 
     Ok(())

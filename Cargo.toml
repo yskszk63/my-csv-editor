@@ -38,7 +38,11 @@ features = [
     "Node",
     "DomTokenList",
     "HtmlInputElement",
+    "HtmlButtonElement",
     "FileList",
+    "Url",
+    "Blob",
+    "BlobPropertyBag",
 ]
 
 [dev-dependencies]
