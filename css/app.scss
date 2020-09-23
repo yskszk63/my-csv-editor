@@ -5,6 +5,9 @@
 @use "@material/list";
 @use "@material/checkbox";
 @use "@material/form-field";
+@use "@material/list/mdc-list";
+@use "@material/menu-surface/mdc-menu-surface";
+@use "@material/menu/mdc-menu";
 
 @include icon-button.core-styles;
 @include drawer.core-styles;
@@ -34,6 +37,6 @@ input[type="file"] {
   width: 0;
 }
 
-main>div {
+main div:first-of-type {
   height: 100%;
 }

@@ -28,6 +28,7 @@
     "@material/elevation": "^7.0.0",
     "@material/form-field": "^7.0.0",
     "@material/icon-button": "^7.0.0",
+    "@material/menu": "^7.0.0",
     "@material/top-app-bar": "^7.0.0",
     "cheetah-grid": "^0.22.9"
   }

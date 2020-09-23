@@ -6,9 +6,9 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen_futures::future_to_promise;
-use web_sys::{Event, EventTarget, Element, HtmlInputElement, HtmlButtonElement, Url, File, FilePropertyBag};
+use web_sys::{Event, EventTarget, Element, HtmlInputElement, HtmlButtonElement, Url, File, FilePropertyBag, MouseEvent, CustomEvent, HtmlElement};
 use js_sys::{Object, Array, Promise, Reflect};
-use gloo::events::EventListener;
+use gloo::events::{EventListener, EventListenerOptions};
 use futures::stream::{Stream, StreamExt};
 use futures::channel::mpsc::{self, Receiver};
 use futures::lock::Mutex;
@@ -131,6 +131,24 @@ mod material {
         pub(crate) fn set_open(this: &MDCDrawer, val: bool);
     }
 
+    #[wasm_bindgen(module = "@material/menu")]
+    extern "C" {
+        #[derive(Clone)]
+        pub(crate) type MDCMenu;
+
+        #[wasm_bindgen(constructor, catch)]
+        pub(crate) fn new(element: &Element) -> Result<MDCMenu, JsValue>;
+
+        #[wasm_bindgen(method, getter)]
+        pub(crate) fn open(this: &MDCMenu) -> bool;
+
+        #[wasm_bindgen(method, setter)]
+        pub(crate) fn set_open(this: &MDCMenu, val: bool);
+
+        #[wasm_bindgen(method, catch, js_name = "setAbsolutePosition")]
+        pub(crate) fn set_absolute_position(this: &MDCMenu, x: i32, y: i32) -> Result<(), JsValue>;
+    }
+
 }
 
 #[global_allocator]
@@ -160,7 +178,8 @@ impl<T> EventStream<T> where T: Clone + 'static {
         for (target, token, event) in desc {
             let token = token.clone();
             let mut tx = tx.clone();
-            let listener = EventListener::new(target, *event, move |event| {
+            let opt = EventListenerOptions::enable_prevent_default();
+            let listener = EventListener::new_with_options(target, *event, opt, move |event| {
                 tx.start_send((token.clone(), event.clone())).unwrap();
             });
             listeners.push(listener);
@@ -303,8 +322,9 @@ fn load(root: &Element, name: String, data: &str, use_header: bool) -> Result<Gr
 enum EventType {
     FileChanged,
     Save,
-    Add,
-    Remove,
+    ContextMenu,
+    MenuSelected,
+    AppBarNav,
 }
 
 async fn async_main() -> Result<(), JsValue> {
@@ -314,8 +334,14 @@ async fn async_main() -> Result<(), JsValue> {
     let document = window.document().unwrap();
     let root = document.query_selector("main").unwrap().unwrap();
 
-    let top_app_bar = material::MDCTopAppBar::new(
-        &document.query_selector("header").unwrap().unwrap()).unwrap();
+    let input_file = document.query_selector("input[type=file]").unwrap().unwrap();
+    let app_save = document.query_selector(".app-save").unwrap().unwrap().dyn_into::<HtmlButtonElement>().unwrap();
+    let main = document.query_selector("main").unwrap().unwrap();
+    let mdc_menu = document.query_selector(".mdc-menu").unwrap().unwrap();
+    let header = document.query_selector("header").unwrap().unwrap();
+
+    let top_app_bar = material::MDCTopAppBar::new(&header).unwrap();
+    top_app_bar.set_scroll_target(&main).unwrap();
     let drawer = material::MDCDrawer::attachTo(
         &document.query_selector("aside").unwrap().unwrap()).unwrap();
     let formfield = material::MDCFormField::new(
@@ -323,32 +349,25 @@ async fn async_main() -> Result<(), JsValue> {
     let use_header = material::MDCCheckbox::new(
         &document.query_selector(".mdc-checkbox").unwrap().unwrap()).unwrap();
     formfield.set_input(&use_header);
+    let menu = material::MDCMenu::new(&mdc_menu).unwrap();
 
-    top_app_bar.set_scroll_target(&document.query_selector("main").unwrap().unwrap()).unwrap();
-    let drawer2 = drawer.clone();
-    let on_nav = Closure::wrap(Box::new(move || {
-        drawer2.set_open(!drawer2.open());
-    }) as Box<dyn FnMut()>);
-    top_app_bar.listen("MDCTopAppBar:nav", &on_nav).unwrap();
-    on_nav.forget();
-
-    #[allow(unused_assignments)]
     let mut grid = None;
-    let input_file = document.query_selector("input[type=file]").unwrap().unwrap();
-    let app_save = document.query_selector(".app-save").unwrap().unwrap().dyn_into::<HtmlButtonElement>().unwrap();
-    let app_add = document.query_selector(".app-add").unwrap().unwrap().dyn_into::<HtmlButtonElement>().unwrap();
-    let app_remove = document.query_selector(".app-remove").unwrap().unwrap().dyn_into::<HtmlButtonElement>().unwrap();
 
     let mut events = EventStream::new(&[
         (input_file.as_ref(), FileChanged, "change"),
         (app_save.as_ref(), Save, "click"),
-        (app_add.as_ref(), Add, "click"),
-        (app_remove.as_ref(), Remove, "click"),
+        (main.as_ref(), ContextMenu, "contextmenu"),
+        (mdc_menu.as_ref(), MenuSelected, "MDCMenu:selected"),
+        (header.as_ref(), AppBarNav, "MDCTopAppBar:nav"),
     ][..]);
 
     app_save.set_disabled(true);
     while let Some((token, event)) = events.next().await {
         match token {
+            AppBarNav => {
+                drawer.set_open(!drawer.open());
+            }
+
             FileChanged => {
                 let file_list = event.target()
                     .as_ref().and_then(JsCast::dyn_ref::<HtmlInputElement>)
@@ -375,10 +394,9 @@ async fn async_main() -> Result<(), JsValue> {
 
                     drawer.set_open(false);
                     app_save.set_disabled(false);
-                    app_add.set_disabled(false);
-                    app_remove.set_disabled(false);
                 };
             }
+
             Save => {
                 if let Some(grid) = &grid {
                     let csv = grid.csv.lock().await;
@@ -393,44 +411,49 @@ async fn async_main() -> Result<(), JsValue> {
                     Url::revoke_object_url(&url).unwrap();
                 }
             }
-            Add => {
-                if let Some(grid) = &grid {
-                    let mut csv = grid.csv.lock().await;
-                    let grid = &grid.grid;
 
-                    let selection = grid.selection().unwrap();
-                    #[allow(unused_unsafe)]
-                    let row = unsafe {
-                        let select = Reflect::get(&selection, &"select".into()).unwrap();
-                        Reflect::get(&select, &"row".into()).unwrap()
-                    };
-                    let row = row.as_f64().map(|f| f as usize).unwrap();
-
-                    csv.insert_row(row - 1); // FIXME
-                    let data_source = grid.data_source().unwrap();
-                    data_source.set_length(csv.rows()).unwrap();
-                    data_source.clear_cache().unwrap();
-                    grid.invalidate().unwrap();
+            ContextMenu => {
+                if grid.is_some() {
+                    let event = event.dyn_ref::<MouseEvent>().unwrap();
+                    event.prevent_default();
+                    menu.set_absolute_position(event.client_x(), event.client_y()).ok();
+                    menu.set_open(true);
                 }
             }
-            Remove => {
-                if let Some(grid) = &grid {
-                    let mut csv = grid.csv.lock().await;
-                    let grid = &grid.grid;
 
-                    let selection = grid.selection().unwrap();
-                    #[allow(unused_unsafe)]
-                    let row = unsafe {
-                        let select = Reflect::get(&selection, &"select".into()).unwrap();
-                        Reflect::get(&select, &"row".into()).unwrap()
-                    };
-                    let row = row.as_f64().map(|f| f as usize).unwrap();
+            MenuSelected => {
+                let event = event.dyn_ref::<CustomEvent>().unwrap();
+                let detail = event.detail();
+                #[allow(unused_unsafe)]
+                let item = unsafe {
+                    Reflect::get(&detail, &"item".into()).unwrap()
+                };
+                let item = item.dyn_into::<HtmlElement>().unwrap();
+                match (&grid, &item.dataset().get("action")) {
+                    (Some(grid), Some(action)) => {
+                        let mut csv = grid.csv.lock().await;
+                        let grid = &grid.grid;
 
-                    csv.remove_row(row - 1); // FIXME
-                    let data_source = grid.data_source().unwrap();
-                    data_source.set_length(csv.rows()).unwrap();
-                    data_source.clear_cache().unwrap();
-                    grid.invalidate().unwrap();
+                        let selection = grid.selection().unwrap();
+                        #[allow(unused_unsafe)]
+                        let row = unsafe {
+                            let select = Reflect::get(&selection, &"select".into()).unwrap();
+                            Reflect::get(&select, &"row".into()).unwrap()
+                        };
+                        let row = row.as_f64().map(|f| f as usize).unwrap();
+
+                        match action.as_ref() {
+                            "add_before" => csv.insert_row(row - 1), // FIXME
+                            "add_after" => csv.insert_row(row - 0), // FIXME
+                            "remove" => csv.remove_row(row - 1), // FIXME
+                            _ => {},
+                        }
+                        let data_source = grid.data_source().unwrap();
+                        data_source.set_length(csv.rows()).unwrap();
+                        data_source.clear_cache().unwrap();
+                        grid.invalidate().unwrap();
+                    }
+                    _ => {}
                 }
             }
         }
