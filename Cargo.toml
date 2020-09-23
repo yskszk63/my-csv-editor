@@ -44,6 +44,10 @@ features = [
     "Url",
     "File",
     "FilePropertyBag",
+    "MouseEvent",
+    "CustomEvent",
+    "DomStringMap",
+    "HtmlElement",
 ]
 
 [dev-dependencies]
