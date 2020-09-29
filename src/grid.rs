@@ -6,6 +6,7 @@ use wasm_bindgen_futures::{future_to_promise, spawn_local};
 use js_sys::{Object, Array, Promise, Reflect};
 use web_sys::Element;
 use futures::lock::Mutex;
+use unicode_width::UnicodeWidthStr as _;
 use csvparser::Csv;
 
 use crate::sys::cheetah_grid;
@@ -60,13 +61,14 @@ fn header(csv: &Csv, editor: &cheetah_grid::InlineInputEditor) -> Array {
         "field" => "n",
         "caption" => "#",
         "sort" => true,
-        "width" => "auto",
+        "width" => "32px",
         "columnType" => "number"
     }].into_iter().chain((0..csv.max_cols()).map(|i| js! {
         "field" => format!("c{}", i),
         "caption" => csv.header(i).unwrap_or(&format!("{}", i)),
         "action" => editor.clone(),
-        "width" => "auto",
+        "width" => format!("{}px", csv.cols(i).map(|v| v.width_cjk() as u32).max().unwrap_or(0) * 16),
+        "minWidth" => "64px",
         "sort" => true,
         "columnType" => if csv.cols(i).all(|v| v.parse::<f64>().is_ok()) { "number" } else { "text" }
     })).collect()
