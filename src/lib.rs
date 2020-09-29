@@ -10,8 +10,9 @@ use web_sys::{
     File,
     FilePropertyBag,
 };
-use js_sys::{Array, Reflect, Error as JsError};
+use js_sys::{Array, Reflect, Error as JsError, Uint8Array};
 use futures::stream::StreamExt as _;
+use encoding::EncodingRef;
 
 use event_stream::EventStream;
 use env::Env;
@@ -24,10 +25,10 @@ mod grid;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-#[derive(Debug)]
 struct State {
     env: Env,
     grid: Option<grid::Grid>,
+    coder: Option<EncodingRef>,
 }
 
 #[derive(Debug, Clone)]
@@ -68,15 +69,20 @@ impl EventType {
             let bytes = read_as_bytes(file).await.map_err(|e| format!("failed to read file {}", e))?;
 
             let (encoding, _, _) = chardet::detect(&bytes);
-            let coder = encoding_from_whatwg_label(chardet::charset2encoding(&encoding));
-            let text = if let Some(coder) = coder {
-                coder.decode(&bytes, encoding::DecoderTrap::Ignore)
-                    .unwrap_or(String::from_utf8_lossy(&bytes).to_string())
+            let mut using_coder = encoding_from_whatwg_label(chardet::charset2encoding(&encoding));
+            let text = if let Some(coder) = using_coder {
+                coder.decode(&bytes, encoding::DecoderTrap::Replace).ok()
             } else {
+                None
+            };
+            let text = if let Some(text) = text {
+                text
+            } else {
+                using_coder = None;
                 String::from_utf8_lossy(&bytes).to_string()
             };
 
-            let State { env, ref mut grid } = state;
+            let State { env, ref mut grid, ref mut coder } = state;
 
             let root = env.root();
             let document = root.owner_document().ok_or("no owner document found")?;
@@ -88,6 +94,7 @@ impl EventType {
             };
 
             *grid = Some(grid::Grid::new(div, file.name(), &text, env.app_use_header().checked())?);
+            *coder = using_coder;
 
             env.mdc_drawer().set_open(false);
             env.app_save().set_disabled(false);
@@ -96,13 +103,19 @@ impl EventType {
     }
 
     async fn handle_save(&self, _event: &Event, state: &mut State) -> Result<(), JsValue> {
-        let State { grid, env } = state;
+        let State { grid, env, coder } = state;
         if let Some(grid) = &grid {
             let csv = grid.csv();
             let csv = csv.lock().await;
-            let content = format!("{}", &*csv);
-            let parts = Array::of1(&JsValue::from(content));
-            let blob = File::new_with_str_sequence_and_options(
+            let csv_content = format!("{}", &*csv);
+            let content = if let Some(coder) = coder {
+                coder.encode(&csv_content, encoding::EncoderTrap::Replace).ok()
+            } else {
+                None
+            };
+            let content = content.unwrap_or_else(|| csv_content.as_bytes().to_vec());
+            let parts = Array::of1(Uint8Array::from(content.as_ref()).buffer().as_ref());
+            let blob = File::new_with_buffer_source_sequence_and_options(
                 &parts,
                 &grid.name(),
                 FilePropertyBag::new().type_("text/csv"))?;
@@ -114,7 +127,7 @@ impl EventType {
     }
 
     async fn handle_context_menu(&self, event: &Event, state: &mut State) -> Result<(), JsValue> {
-        let State { grid, env } = state;
+        let State { grid, env, .. } = state;
         if grid.is_some() {
             let event = event.dyn_ref::<MouseEvent>().ok_or("event type mismatch")?;
             event.prevent_default();
@@ -178,7 +191,7 @@ async fn async_main() -> Result<(), JsValue> {
         (env.menu().as_ref(), MenuSelected, "MDCMenu:selected"),
         (env.header().as_ref(), AppBarNav, "MDCTopAppBar:nav"),
     ][..]);
-    let mut state = State { env, grid: None };
+    let mut state = State { env, grid: None, coder: None };
 
     while let Some((token, event)) = events.next().await {
         if let Err(err) = token.handle(&event, &mut state).await {
