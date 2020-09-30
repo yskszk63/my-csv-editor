@@ -18,6 +18,7 @@
 @include form-field.core-styles;
 
 @import url("https://fonts.googleapis.com/icon?family=Material+Icons");
+@import url('https://fonts.googleapis.com/css2?family=Fira+Mono&display=swap');
 
 body {
   margin: 0;
@@ -30,6 +31,7 @@ aside {
 main {
   overflow: auto;
   height: calc(100vh - 64px);
+  font-family: 'Fira Mono', monospace;
 }
 
 input[type="file"] {
