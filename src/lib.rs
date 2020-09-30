@@ -146,7 +146,7 @@ impl EventType {
             };
             match (action.as_ref(), row.as_f64().map(|f| f as usize)) {
                 ("add_before", Some(row)) if (1..=csv.rows()).contains(&row) => csv.insert_row(row - 1),
-                ("add_after", Some(row)) if (0..csv.rows()).contains(&row) => csv.insert_row(row - 0),
+                ("add_after", Some(row)) if (0..=csv.rows()).contains(&row) => csv.insert_row(row - 0),
                 ("remove", Some(row)) if (1..=csv.rows()).contains(&row) => csv.remove_row(row - 1),
                 _ => return Ok(()),
             }
