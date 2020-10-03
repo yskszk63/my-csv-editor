@@ -5,10 +5,12 @@ use web_sys::{
     HtmlInputElement,
     Event,
     MouseEvent,
+    DragEvent,
     CustomEvent,
     Url,
     File,
     FilePropertyBag,
+    DataTransfer,
 };
 use js_sys::{Array, Reflect, Error as JsError, Uint8Array};
 use futures::stream::StreamExt as _;
@@ -31,6 +33,45 @@ struct State {
     coder: Option<EncodingRef>,
 }
 
+async fn load_csv(file: &gloo::file::File, state: &mut State) -> Result<(), JsValue> {
+    use gloo::file::futures::read_as_bytes;
+    use encoding::label::encoding_from_whatwg_label;
+
+    let bytes = read_as_bytes(file).await.map_err(|e| format!("failed to read file {}", e))?;
+
+    let (encoding, _, _) = chardet::detect(&bytes);
+    let mut using_coder = encoding_from_whatwg_label(chardet::charset2encoding(&encoding));
+    let text = if let Some(coder) = using_coder {
+        coder.decode(&bytes, encoding::DecoderTrap::Replace).ok()
+    } else {
+        None
+    };
+    let text = if let Some(text) = text {
+        text
+    } else {
+        using_coder = None;
+        String::from_utf8_lossy(&bytes).to_string()
+    };
+
+    let State { env, ref mut grid, ref mut coder } = state;
+
+    let root = env.root();
+    let document = root.owner_document().ok_or("no owner document found")?;
+    let div = document.create_element("div")?;
+    if let Some(old) = root.first_element_child() {
+        old.replace_with_with_node_1(&div)?;
+    } else {
+        root.append_child(&div)?;
+    };
+
+    *grid = Some(grid::Grid::new(div, file.name(), &text, env.app_use_header().checked())?);
+    *coder = using_coder;
+
+    env.mdc_drawer().set_open(false);
+    env.app_save().set_disabled(false);
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 enum EventType {
     FileChanged,
@@ -38,6 +79,8 @@ enum EventType {
     ContextMenu,
     MenuSelected,
     AppBarNav,
+    DragOver,
+    Drop,
 }
 
 impl EventType {
@@ -48,13 +91,36 @@ impl EventType {
             Self::ContextMenu => self.handle_context_menu(event, state).await,
             Self::MenuSelected => self.handle_menu_selected(event, state).await,
             Self::AppBarNav => self.handle_app_bar_nav(event, state).await,
+            Self::DragOver => self.handle_drag_over(event, state).await,
+            Self::Drop => self.handle_drop(event, state).await,
         }
     }
 
-    async fn handle_file_changed(&self, event: &Event, state: &mut State) -> Result<(), JsValue> {
-        use gloo::file::futures::read_as_bytes;
-        use encoding::label::encoding_from_whatwg_label;
+    async fn handle_drag_over(&self, event: &Event, _state: &mut State) -> Result<(), JsValue> {
+        event.prevent_default();
+        Ok(())
+    }
 
+    async fn handle_drop(&self, event: &Event, state: &mut State) -> Result<(), JsValue> {
+        event.prevent_default();
+        let file_list = event.dyn_ref::<DragEvent>()
+            .and_then(DragEvent::data_transfer)
+            .as_ref()
+            .and_then(DataTransfer::files)
+            .map(gloo::file::FileList::from);
+        let file_list = if let Some(file_list) = file_list {
+            file_list
+        } else {
+            return Ok(())
+        };
+
+        if let Some(file) = file_list.iter().next() {
+            load_csv(file, state).await?;
+        };
+        Ok(())
+    }
+
+    async fn handle_file_changed(&self, event: &Event, state: &mut State) -> Result<(), JsValue> {
         let file_list = event.target()
             .as_ref().and_then(JsCast::dyn_ref::<HtmlInputElement>)
             .and_then(HtmlInputElement::files)
@@ -66,38 +132,7 @@ impl EventType {
         };
 
         if let Some(file) = file_list.iter().next() {
-            let bytes = read_as_bytes(file).await.map_err(|e| format!("failed to read file {}", e))?;
-
-            let (encoding, _, _) = chardet::detect(&bytes);
-            let mut using_coder = encoding_from_whatwg_label(chardet::charset2encoding(&encoding));
-            let text = if let Some(coder) = using_coder {
-                coder.decode(&bytes, encoding::DecoderTrap::Replace).ok()
-            } else {
-                None
-            };
-            let text = if let Some(text) = text {
-                text
-            } else {
-                using_coder = None;
-                String::from_utf8_lossy(&bytes).to_string()
-            };
-
-            let State { env, ref mut grid, ref mut coder } = state;
-
-            let root = env.root();
-            let document = root.owner_document().ok_or("no owner document found")?;
-            let div = document.create_element("div")?;
-            if let Some(old) = root.first_element_child() {
-                old.replace_with_with_node_1(&div)?;
-            } else {
-                root.append_child(&div)?;
-            };
-
-            *grid = Some(grid::Grid::new(div, file.name(), &text, env.app_use_header().checked())?);
-            *coder = using_coder;
-
-            env.mdc_drawer().set_open(false);
-            env.app_save().set_disabled(false);
+            load_csv(file, state).await?;
         };
         Ok(())
     }
@@ -190,6 +225,8 @@ async fn async_main() -> Result<(), JsValue> {
         (env.root().as_ref(), ContextMenu, "contextmenu"),
         (env.menu().as_ref(), MenuSelected, "MDCMenu:selected"),
         (env.header().as_ref(), AppBarNav, "MDCTopAppBar:nav"),
+        (env.root().as_ref(), DragOver, "dragover"),
+        (env.root().as_ref(), Drop, "drop"),
     ][..]);
     let mut state = State { env, grid: None, coder: None };
 

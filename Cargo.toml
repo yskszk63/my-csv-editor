@@ -36,6 +36,7 @@ features = [
     "Window",
     "Document",
     "Element",
+    "HtmlElement",
     "Node",
     "DomTokenList",
     "HtmlInputElement",
@@ -45,10 +46,11 @@ features = [
     "Url",
     "File",
     "FilePropertyBag",
+    "DataTransfer",
     "MouseEvent",
+    "DragEvent",
     "CustomEvent",
     "DomStringMap",
-    "HtmlElement",
 ]
 
 [dev-dependencies]
