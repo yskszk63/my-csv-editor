@@ -5,6 +5,72 @@ CSV editor for my Rust and WASM study.
 
 [Demo](https://yskszk63.github.io/my-csv-editor/)
 
+## How do it run.
+
+Examples -> ubuntu:21.04
+
+### 0. Precondtion
+
+- build environment.
+- Node.js & npm
+- git
+- Rust ([rustup](https://rustup.rs/))
+- [wasm-pack](https://github.com/rustwasm/wasm-pack)
+
+```bash
+$ sudo apt install build-essential nodejs npm git
+...
+$ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+...
+```
+
+#### 0-1. Install wasm-pack
+
+Download
+
+```bash
+$ TMPDIR=`mktemp -d`
+$ curl -L 'https://github.com/rustwasm/wasm-pack/releases/download/v0.9.1/wasm-pack-v0.9.1-x86_64-unknown-linux-musl.tar.gz' | tar -zxf - -C $TMPDIR
+...
+$ mv $TMPDIR/wasm-pack-v0.9.1-x86_64-unknown-linux-musl/wasm-pack ~/.local/bin/
+$ wasm-pack --version
+wasm-pack 0.9.1
+```
+
+or `cargo install`
+
+```bash
+$ cargo install wasm-pack
+...
+```
+
+### 1. Clone repository & Initialize
+
+```bash
+$ git clone https://github.com/yskszk63/my-csv-editor
+...
+$ cd my-csv-editor
+$ npm install
+...
+```
+
+### 2. Run locally
+
+```bash
+$ npm start
+```
+
+Listen at http://localhost:8000/
+
+### 3. Build
+
+```bash
+$ npm run build
+...
+$ ls dist/{*.css,*.wasm,index.*}
+dist/bundle.css  dist/fc37c871845c1cfd91f2.module.wasm  dist/index.html  dist/index.js
+```
+
 ## License
 
 Licensed under either of
