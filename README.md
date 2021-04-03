@@ -9,25 +9,26 @@ CSV editor for my Rust and WASM study.
 
 Examples -> ubuntu:21.04
 
-## Precondtion
+### Precondtion
 
-- Needs build environment.
+- build environment.
 - Node.js & npm
 - git
-- Rust [@see](https://rustup.rs/)
+- Rust ([rustup](https://rustup.rs/))
 - [wasm-pack](https://github.com/rustwasm/wasm-pack)
 
-```
+```bash
 $ sudo apt install build-essential nodejs npm git
 ...
 $ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ...
 ```
 
-Install wasm-pack
+#### Install wasm-pack
 
 Download
-```
+
+```bash
 $ TMPDIR=`mktemp -d`
 $ curl -L 'https://github.com/rustwasm/wasm-pack/releases/download/v0.9.1/wasm-pack-v0.9.1-x86_64-unknown-linux-musl.tar.gz' | tar -zxf - -C $TMPDIR
 ...
@@ -37,14 +38,15 @@ wasm-pack 0.9.1
 ```
 
 or `cargo install`
-```
+
+```bash
 $ cargo install wasm-pack
 ...
 ```
 
 ### Clone repository & Initialize
 
-```
+```bash
 $ git clone https://github.com/yskszk63/my-csv-editor
 ...
 $ cd my-csv-editor
@@ -54,7 +56,7 @@ $ npm install
 
 ### Run locally
 
-```
+```bash
 $ npm start
 ```
 
@@ -62,7 +64,7 @@ Listen at http://localhost:8000/
 
 ### Build
 
-```
+```bash
 $ npm run build
 ...
 $ ls dist/{*.css,*.wasm,index.*}
