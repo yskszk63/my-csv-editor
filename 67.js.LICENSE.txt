@@ -441,7 +441,7 @@ PERFORMANCE OF THIS SOFTWARE.
 
 /*! @/tooltip/internal/TooltipElement.css */
 
-/*! Cheetah Grid v0.22.9 | license MIT */
+/*! Cheetah Grid v1.0.1 | license MIT */
 
 /*! ModuleConcatenation bailout: Module is not an ECMAScript module */
 
