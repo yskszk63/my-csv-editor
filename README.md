@@ -4,6 +4,7 @@ CSV editor for my Rust and WASM study.
 (currently can not be save)
 
 [Demo](https://yskszk63.github.io/my-csv-editor/)
+[![dependency status](https://deps.rs/repo/github/yskszk63/my-csv-editor/status.svg)](https://deps.rs/repo/github/yskszk63/my-csv-editor)
 
 ## How do it run.
 
