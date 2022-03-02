@@ -17,7 +17,7 @@ lto = true
 
 [dependencies]
 wasm-bindgen = "0.2"
-gloo = { version = "0.3", features = ["futures"] }
+gloo = { version = "0.6", features = ["futures"] }
 wee_alloc = "0.4"
 console_error_panic_hook = "0.1"
 wasm-logger = "0.2"
