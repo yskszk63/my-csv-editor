@@ -1,4 +1,4 @@
-@use "@material/icon-button";
+@use "@material/icon-button/styles";
 @use "@material/top-app-bar/mdc-top-app-bar";
 @use "@material/elevation/mdc-elevation";
 @use "@material/drawer";
@@ -9,7 +9,6 @@
 @use "@material/menu-surface/mdc-menu-surface";
 @use "@material/menu/mdc-menu";
 
-@include icon-button.core-styles;
 @include drawer.core-styles;
 @include drawer.dismissible-core-styles;
 @include drawer.modal-core-styles;
