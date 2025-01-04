@@ -5,12 +5,12 @@ authors = ["yskszk63 <yskszk63@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-lalrpop-util = "0.19"
+lalrpop-util = "0.22"
 regex = "1.5.5"
-thiserror = "1.0"
+thiserror = "2.0"
 
 [build-dependencies]
-lalrpop = { version = "0.19", features = ["lexer"] }
+lalrpop = { version = "0.22", features = ["lexer"] }
 
 [dev-dependencies]
 anyhow = "1.0"

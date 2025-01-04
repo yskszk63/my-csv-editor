@@ -1,5 +1,4 @@
 const path = require("path");
-const autoprefixer = require('autoprefixer');
 const CopyPlugin = require("copy-webpack-plugin");
 const WasmPackPlugin = require("@wasm-tool/wasm-pack-plugin");
 
@@ -11,7 +10,7 @@ module.exports = {
     asyncWebAssembly: true,
   },
   entry: {
-    index: ["./js/index.js", "./css/app.scss"],
+    index: ["./js/index.js"],
   },
   output: {
     path: dist,
@@ -28,13 +27,7 @@ module.exports = {
         test: /\.scss$/,
         use: [
           {
-            loader: "file-loader",
-            options: {
-              name: "bundle.css",
-            },
-          },
-          {
-            loader: "extract-loader",
+            loader: "style-loader",
           },
           {
             loader: "css-loader",
@@ -75,5 +68,5 @@ module.exports = {
     new WasmPackPlugin({
       crateDirectory: __dirname,
     }),
-  ]
+  ],
 };

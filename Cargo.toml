@@ -17,8 +17,7 @@ lto = true
 
 [dependencies]
 wasm-bindgen = "0.2"
-gloo = { version = "0.6", features = ["futures"] }
-wee_alloc = "0.4"
+gloo = { version = "0.11", features = ["futures"] }
 console_error_panic_hook = "0.1"
 wasm-logger = "0.2"
 log = "0.4"
@@ -28,7 +27,7 @@ futures = "0.3"
 encoding = "0.2.33"
 chardet = "0.2.4"
 csvparser = { path='./csvparser' }
-unicode-width = "0.1.8"
+unicode-width = "0.2"
 
 [dependencies.web-sys]
 version = "0.3"

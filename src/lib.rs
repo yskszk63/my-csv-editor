@@ -24,9 +24,6 @@ mod event_stream;
 mod env;
 mod grid;
 
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
 struct State {
     env: Env,
     grid: Option<grid::Grid>,
